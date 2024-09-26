@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface IERC20 {
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function totalSupply() external view returns (uint256);
+    function decimals() external view returns (uint8);
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    // 添加safeTransferFrom方法
+    function safeTransferFrom(address sender, address recipient, uint256 amount) external;
+    function safeTransferFrom(address sender, address recipient, uint256 amount, bytes calldata data) external;
+}
+
+contract AMMPool {
+    IERC20 public token; // ERC20 代币
+    address public WETH; // WETH 地址
+    uint256 public k; // 常数乘积
+
+    constructor(IERC20 _token, address _WETH) {
+        token = _token;
+        WETH = _WETH;
+        // 初始化常数乘积 k
+        k = IERC20(WETH).balanceOf(address(this)) * _token.balanceOf(address(this));
+    }
+
+    // 添加流动性
+    function deposit(uint256 _tokenAmount, uint256 _wethAmount) external {
+        require(_tokenAmount * IERC20(WETH).balanceOf(address(this)) == _wethAmount * token.balanceOf(address(this)), "Invalid deposit amounts");
+        token.safeTransferFrom(msg.sender, address(this), _tokenAmount);
+        IERC20(WETH).safeTransferFrom(msg.sender, address(this), _wethAmount);
+        k = IERC20(WETH).balanceOf(address(this)) * token.balanceOf(address(this));
+    }
+
+    // 移除流动性
+    function withdraw(uint256 _tokenAmount, uint256 _wethAmount) external {
+        require(token.balanceOf(address(this)) - _tokenAmount >= 0 && IERC20(WETH).balanceOf(address(this)) - _wethAmount >= 0, "Invalid withdraw amounts");
+        token.transfer(msg.sender, _tokenAmount);
+        IERC20(WETH).transfer(msg.sender, _wethAmount);
+        k = IERC20(WETH).balanceOf(address(this)) * token.balanceOf(address(this));
+    }
+
+    // 交易功能
+    function trade(uint256 _sellAmount, uint256 _buyAmount) external {
+        require(_sellAmount <= token.balanceOf(msg.sender), "Insufficient token balance");
+        require(_buyAmount <= IERC20(WETH).balanceOf(msg.sender), "Insufficient WETH balance");
+
+        token.safeTransferFrom(msg.sender, address(this), _sellAmount);
+        IERC20(WETH).safeTransferFrom(msg.sender, address(this), _buyAmount);
+
+        uint256 newK = IERC20(WETH).balanceOf(address(this)) * token.balanceOf(address(this));
+        uint256 diff = newK - k;
+        require(diff == 0, "Invalid trade amounts");
+
+        k = newK;
+    }
+}
